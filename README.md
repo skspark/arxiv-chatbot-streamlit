@@ -1,2 +1,1 @@
-# arxiv-chatbot-streamlit
-arxiv-chatbot-streamlit
+# arxiv-paper-chatbot

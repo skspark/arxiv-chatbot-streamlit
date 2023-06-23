@@ -1,0 +1,46 @@
+[project]
+name = "arxiv-paper-chatbot"
+version = "0.1.0"
+authors = [
+    { name="Sookyung Park", email="wondershine.one@gmail.com" },
+    {name = "skspark", email = "wondershine.one@gmail.com"},
+]
+description = "arxiv paper chatbot"
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=1.25.1",
+    "arxiv>=1.2.0",
+    "numpy>=1.21.1",
+    "langchain>=0.0.240",
+    "py-pdf-parser>=0.10.2",
+    "pydantic>=1.10.11",
+    "sklearn>=0.0.post7",
+    "pandas>=2.0.3",
+    "tiktoken>=0.4.0",
+]
+
+#"pre-commit>=3.3.3",
+#"pytest>=7.4.0",
+#
+
+license = {text = "MIT"}
+
+[project.urls]
+"Homepage" = "https://github.com/skspark/arxiv-paper-chatbot"
+"Bug Tracker" = "https://github.com/skspark/arxiv-paper-chatbot/issues"
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+#
+#[[tool.pdm.source]]
+#url = "https://download.pytorch.org/whl/nightly/cpu"
+#verify_ssl = true
+#name = "internal"
+#type = "find_links"
