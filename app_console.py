@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 
 import argparse
+import json
 
 import arxiv
 import ast
@@ -99,17 +100,20 @@ def main():
                         help='openai call limit (default: 100)', required=False)
     parser.add_argument('--language', '-g', dest='language', default="english",
                         help='language for paper overview', required=False)
+    parser.add_argument('--from-file', '-f', dest='from_file', default="", help="from chatbot dict file",
+                        required=False)
     args = parser.parse_args()
     arxiv_paper_id = args.arxiv_paper_id
     openai_api_key = args.openai_api_key
     llm_call_limit = args.llm_call_limit
     language = args.language
+    from_file = args.from_file
 
     print('downloading paper')
     paper = load_paper(arxiv_paper_id)
     print('downloading paper done')
 
-    def _load_chatbot(openai_api_key: str, paper: Paper, language: str,
+    def _load_chatbot(openai_api_key: str, paper: Paper, language: str, from_file: str,
                       chat_handler: OpenAIChatHandler, progress_queue: Queue, done_queue: Queue):
         openai.api_key = openai_api_key
         os.environ["OPENAI_API_KEY"] = openai_api_key
@@ -120,9 +124,15 @@ def main():
         embedding_fn = OpenAIEmbeddings().embed_query
         vectorstore = FAISS(embedding_fn, index, InMemoryDocstore({}), {})
 
-        chatbot = PaperChatbot(llm=llm, progress_queue=progress_queue,
-                               knowledge_vector_store=vectorstore, paper=paper, language=language)
-        time.sleep(0.5)  # interval to resolve progress queue message
+        if from_file:
+            with open(from_file, 'r') as f:
+                json_inputs = json.loads("\n".join(f.readlines()))
+                chatbot = PaperChatbot.load(**json_inputs)
+        else:
+            chatbot = PaperChatbot.load(llm=llm, progress_queue=progress_queue,
+                                        knowledge_vector_store=vectorstore,
+                                        paper=paper, language=language)
+            time.sleep(0.5)  # interval to resolve progress queue message
         done_queue.put(chatbot)
 
     # run background
@@ -134,6 +144,7 @@ def main():
                      kwargs={"openai_api_key": openai_api_key,
                              "paper": paper,
                              "language": language,
+                             "from_file": from_file,
                              "chat_handler": chat_handler,
                              "progress_queue": chatbot_progress_queue,
                              "done_queue": done_queue}).start()
@@ -150,7 +161,8 @@ def main():
 
     print("====== Paper Overview ======")
     print(chatbot.overview())
-    _interact_with_chatbot(chatbot = chatbot, language=language)
+    print("============================")
+    _interact_with_chatbot(chatbot=chatbot, language=language)
 
 
 def _interact_with_chatbot(chatbot: PaperChatbot, language: str):
@@ -162,14 +174,17 @@ def _interact_with_chatbot(chatbot: PaperChatbot, language: str):
             break  # Exit the loop if the user enters 'exit'
 
         parts = user_input.split()
+        if not parts:
+            continue
         action = parts[0]
-        if len(parts) > 2:
+        if len(parts) >= 2:
             argument = ' '.join(parts[1:])
         else:
             argument = ""
 
         if action == "save":
             file_path = argument
+            print(f"Contents saving to {file_path}")
             chatbot.save(file_path)
             print(f"Contents saved to {file_path}")
         elif action == "ask":

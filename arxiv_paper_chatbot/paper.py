@@ -2,7 +2,6 @@
 
 from typing import List, Optional
 
-from py_pdf_parser.components import PDFElement
 from pydantic import BaseModel
 
 
@@ -19,13 +18,13 @@ class SectionTitle(BaseModel):
 
 class PaperSection(BaseModel):
     title: Optional[SectionTitle] = None
-    elems: List[PDFElement] = []
+    elems: List[str] = []
 
     class Config:
         arbitrary_types_allowed = True
 
     def summary(self):
-        elems_summary = " ".join([item.text() for item in self.elems])
+        elems_summary = " ".join([item for item in self.elems])
         return f"{self.title.content}: \n {elems_summary}"
 
     def chunked_elems_text(self, chunk_size: int) -> List[str]:
@@ -33,8 +32,7 @@ class PaperSection(BaseModel):
             return []
         chunks = []
         c_chunk, c_chunk_size = [], 0
-        for elem in self.elems:
-            elem_txt = elem.text()
+        for elem_txt in self.elems:
             elem_size = len(elem_txt)
             if c_chunk_size + len(elem_txt) >= chunk_size:
                 if c_chunk:

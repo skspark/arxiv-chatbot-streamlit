@@ -100,16 +100,16 @@ class PaperParser(BaseModel):
         sections = PaperSections()  # (section_title, section_elems)
         if len(section_titles) > 1:
             for i in range(len(section_titles) - 1):
+                elems = orig_elems[(section_titles[i].elem_idx + 1) : section_titles[i + 1].elem_idx]
                 section = PaperSection(
                     title=section_titles[i],
-                    elems=orig_elems[
-                        (section_titles[i].elem_idx + 1) : section_titles[i + 1].elem_idx
-                    ],
+                    elems=[item.text() for item in elems],
                 )
                 sections.add(section)
+        elems = orig_elems[section_titles[-1].elem_idx + 1 :]
         section = PaperSection(
             title=section_titles[-1],
-            elems=orig_elems[section_titles[-1].elem_idx + 1 :],
+            elems=[item.text() for item in elems],
         )
         sections.add(section)
         return sections
