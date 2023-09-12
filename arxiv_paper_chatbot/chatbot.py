@@ -179,7 +179,6 @@ def _build_total_summary(llm: BaseChatModel, language: str,
 def _build_keywords(llm: BaseLanguageModel, language: str, summaries: List[str], progress_queue: Optional[Queue]) -> \
 List[str]:
     _send_progress(progress_queue, "retrieving all keywords")
-
     summary_keywords = [_get_keywords(llm=llm, content=t, count=4, language=language) for t in summaries]
     _send_progress(progress_queue, f"all keywords: {summary_keywords}")
     keywords_with_count: Dict[str, int] = {}
@@ -194,8 +193,8 @@ class PaperChatbot(BaseModel):
     llm: BaseChatModel
     knowledge_retriever: VectorStoreRetriever
     paper: Paper
-    keywords: List[str]
     section_summaries: List[str]
+    keywords: List[str]
     total_summary: str
 
     class Config:
@@ -203,7 +202,8 @@ class PaperChatbot(BaseModel):
 
     @classmethod
     def load(cls, progress_queue: Optional[Queue], llm: BaseChatModel,
-             paper: Paper, knowledge_vector_store: VectorStore, language: str) -> 'PaperChatbot':
+             paper: Paper, knowledge_vector_store: VectorStore, language: str,
+             with_keywords: bool = False) -> 'PaperChatbot':
         knowledge_reference_size = 5
         knowledge_vector_store = knowledge_vector_store
         knowledge_retriever: VectorStoreRetriever = knowledge_vector_store.as_retriever(
@@ -220,26 +220,37 @@ class PaperChatbot(BaseModel):
                                              section_summaries=section_summaries,
                                              progress_queue=progress_queue)
         _send_progress(progress_queue, f"total summary: {total_summary}")
-        keywords = _build_keywords(llm=llm,
-                                   language=language,
-                                   summaries=section_summaries,
-                                   progress_queue=progress_queue)
-        _send_progress(progress_queue, f"significant keywords: {keywords}")
+        keywords=[]
+        if with_keywords:
+            keywords = _build_keywords(llm=llm,
+                                       language=language,
+                                       summaries=section_summaries,
+                                       progress_queue=progress_queue)
+            _send_progress(progress_queue, f"significant keywords: {keywords}")
         return cls(llm=llm, knowledge_retriever=knowledge_retriever, paper=paper,
                    keywords=keywords, section_summaries=section_summaries, total_summary=total_summary)
 
     def save(self, file_path: str):
         with open(file_path, 'w') as f:
-            f.write(json.dumps(self.json(), indent=2))
+            json.dump(self.json(exclude={"knowledge_retriever"}), f, indent=2)
 
     def overview(self) -> str:
-        return f"Paper Title:\n {self.paper.title}\n\n" \
-               f"Summary:\n {self.total_summary}\n\n" \
-               f"Keywords:\n {self.keywords} \n"
+        msgs = [f"Paper Title:\n {self.paper.title}",  f"Summary:\n {self.total_summary}"]
+        if self.keywords:
+            msgs.append(f"Keywords:\n {self.keywords}")
+        return "\n\n".join(msgs)
 
-    def answer(self, language: str, query: str, chat_history: BaseChatMessageHistory) -> str:
+    def answer(self, progress_queue: Optional[Queue],
+               language: str, query: str, chat_history: BaseChatMessageHistory) -> str:
+        _send_progress(progress_queue, "retrieving related docs")
         docs = self.knowledge_retriever.get_relevant_documents(query)
-        answer_keyword_chain = LLMChain(
+        _send_progress(progress_queue, "\n".join(["related docs:"] + [f"\t - {doc.page_content}" for doc in docs]))
+        history_limit = 3
+        trimmed_history = chat_history.messages[-history_limit:]
+        history_summary = "\n".join([f"{item.type}: {item.content}" for item in trimmed_history])
+        knowledge_summary = "\n".join([doc.page_content for doc in docs])
+        _send_progress(progress_queue, "retrieving answer from llm with knowledge")
+        chain = LLMChain(
             llm=self.llm,
             prompt=PromptTemplate(
                 input_variables=["chat_history", "knowledge", "user_query", "language"],
@@ -257,9 +268,5 @@ USER QUERY: {{ user_query }}
 ALWAYS ANSWER WITH {{ language }}
 
 ANSWER:"""))
-        history_limit = 3
-        trimmed_history = chat_history.messages[-history_limit:]
-        history_summary = "\n".join([f"{item.type}: {item.content}" for item in trimmed_history])
-        knowledge_summary = "\n".join([doc.page_content for doc in docs])
-        return answer_keyword_chain.run(
+        return chain.run(
             language=language, chat_history=history_summary, knowledge=knowledge_summary, user_query=query)

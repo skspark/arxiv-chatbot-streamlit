@@ -23,6 +23,7 @@ dependencies = [
     "sklearn>=0.0.post7",
     "pandas>=2.0.3",
     "tiktoken>=0.4.0",
+    "langcodes>=3.3.0",
 ]
 
 #"pre-commit>=3.3.3",

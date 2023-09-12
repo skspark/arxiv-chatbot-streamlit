@@ -1,4 +1,4 @@
-# -*- coding:utf-8 -*-
+# -*- coding: utf-8 -*-
 
 import argparse
 import json
@@ -168,33 +168,53 @@ def main():
 def _interact_with_chatbot(chatbot: PaperChatbot, language: str):
     chat_history: BaseChatMessageHistory = ChatMessageHistory()
     while True:
-        user_input = ast.literal_eval('"' + input("Enter a command (exit/save/ask): ") + '"')
-        if user_input.lower() == 'exit':
-            print("Exiting the program.")
-            break  # Exit the loop if the user enters 'exit'
+        try:
+            user_input = ast.literal_eval('"' + input("Enter a command (exit/save/ask): ") + '"')
+            if user_input.lower() == 'exit':
+                print("Exiting the program.")
+                break  # Exit the loop if the user enters 'exit'
+            parts = user_input.split()
+            if not parts:
+                continue
+            action = parts[0]
+            if len(parts) >= 2:
+                argument = ' '.join(parts[1:])
+            else:
+                argument = ""
+            if action == "save":
+                file_path = argument
+                print(f"Contents saving to {file_path}")
+                chatbot.save(file_path)
+                print(f"Contents saved to {file_path}")
+            elif action == "ask":
+                def _get_answer(language: str, user_query: str, chat_history: BaseChatMessageHistory,
+                                progress_queue: Queue, done_queue: Queue):
+                    response = chatbot.answer(language=language, query=user_query, chat_history=chat_history,
+                                              progress_queue=progress_queue)
+                    done_queue.put(response)
 
-        parts = user_input.split()
-        if not parts:
-            continue
-        action = parts[0]
-        if len(parts) >= 2:
-            argument = ' '.join(parts[1:])
-        else:
-            argument = ""
-
-        if action == "save":
-            file_path = argument
-            print(f"Contents saving to {file_path}")
-            chatbot.save(file_path)
-            print(f"Contents saved to {file_path}")
-        elif action == "ask":
-            user_query = argument
-            response = chatbot.answer(language=language, query=user_query, chat_history=chat_history)
-            print("Answer: " + response)
-            chat_history.add_message(HumanMessage(content=user_query))
-            chat_history.add_message(AIMessage(content=response))
-        else:
-            print("Invalid command. Supported actions are 'save' and 'ask' or 'exit'")
+                user_query = argument
+                progress_queue = Queue(maxsize=0)
+                done_queue = Queue(maxsize=0)
+                threading.Thread(target=_get_answer,
+                                 kwargs={"language": language,
+                                         "user_query": user_query,
+                                         "chat_history": chat_history,
+                                         "progress_queue": progress_queue,
+                                         "done_queue": done_queue}).start()
+                for which, data in select(progress_queue, done_queue):
+                    if which is progress_queue:
+                        print(data)
+                    elif which is done_queue:
+                        chat_history.add_message(HumanMessage(content=user_query))
+                        chat_history.add_message(AIMessage(content=data))
+                        print(f"ANSWER: {data}")
+                        break
+            else:
+                print("Invalid command. Supported actions are 'save' and 'ask' or 'exit'")
+        except Exception as e:
+            print(f"Unexpected error occurred. {e}")
+            print("Please try again.")
 
 
 if __name__ == "__main__":
