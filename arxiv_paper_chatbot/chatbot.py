@@ -26,7 +26,8 @@ _summarize_with_language_prompt = PromptTemplate(
 
 ALWAYS RESPOND WITH {{ language }}.
 CONCISE SUMMARY:""",
-    input_variables=["text", "language"])
+    input_variables=["text", "language"],
+)
 
 
 def _send_progress(progress_queue: Optional[Queue], msg: str):
@@ -49,14 +50,16 @@ ANSWER's format are always json type containing keywords, as follows:
     "keywords": [word 1, word 2, ..., word n]
 }
 
-ANSWER:"""
+ANSWER:""",
     )
     retrieve_keyword_chain = LLMChain(llm=llm, prompt=prompt)
     raw_keywords = retrieve_keyword_chain.run(content=content, count=count, language=language)
     return json.loads(raw_keywords)["keywords"]
 
 
-def _get_significant_keywords(llm: BaseLanguageModel, language: str, keywords: Dict[str, int], count: int) -> List[str]:
+def _get_significant_keywords(
+    llm: BaseLanguageModel, language: str, keywords: Dict[str, int], count: int
+) -> List[str]:
     if not keywords:
         return []
     prompt = PromptTemplate(
@@ -87,12 +90,17 @@ ANSWER:""",
     return json.loads(raw_keywords)["keywords"]
 
 
-def _build_section_summaries(llm: BaseChatModel, paper: Paper,
-                             knowledge_retriever: VectorStoreRetriever,
-                             language: str, progress_queue: Optional[Queue]) -> List[str]:
+def _build_section_summaries(
+    llm: BaseChatModel,
+    paper: Paper,
+    knowledge_retriever: VectorStoreRetriever,
+    language: str,
+    progress_queue: Optional[Queue],
+) -> List[str]:
     # summarize by chunks
-    stuff_chain = load_summarize_chain(llm=llm, chain_type="stuff",
-                                       prompt=_summarize_with_language_prompt)
+    stuff_chain = load_summarize_chain(
+        llm=llm, chain_type="stuff", prompt=_summarize_with_language_prompt
+    )
     approx_chunk_size = 4096
     if not paper.sections:
         summaries: List[str] = []
@@ -100,8 +108,8 @@ def _build_section_summaries(llm: BaseChatModel, paper: Paper,
         chunked = wrap(paper.raw, width=approx_chunk_size)
         for chunk in chunked:
             summary = stuff_chain.run(
-                input_documents=[Document(page_content=chunk)],
-                language=language)
+                input_documents=[Document(page_content=chunk)], language=language
+            )
             summaries.append(summary)
             _send_progress(progress_queue, f"chunk summary: {summary}")
             knowledge_retriever.add_documents(documents=[Document(page_content=summary)])
@@ -111,19 +119,20 @@ def _build_section_summaries(llm: BaseChatModel, paper: Paper,
     summaries: List[str] = []
     _send_progress(progress_queue, "summarizing paper sections")
     section_mappings = (
-            [
-                ("OVERVIEW", paper.sections.overview),
-                ("ABSTRACT", paper.sections.abstract),
-                ("INTRODUCTION", paper.sections.introduction),
-            ]
-            + [(section.title.content, section) for section in paper.sections.details]
-            + [("CONCLUSION", paper.sections.conclusion)]
+        [
+            ("OVERVIEW", paper.sections.overview),
+            ("ABSTRACT", paper.sections.abstract),
+            ("INTRODUCTION", paper.sections.introduction),
+        ]
+        + [(section.title.content, section) for section in paper.sections.details]
+        + [("CONCLUSION", paper.sections.conclusion)]
     )
     for title, section in section_mappings:
         if not section:
             continue
         section_chunk_summaries, section_summary = _summarize_section(
-            llm=llm, language=language, section=section, approx_chunk_size=approx_chunk_size)
+            llm=llm, language=language, section=section, approx_chunk_size=approx_chunk_size
+        )
         if not section_chunk_summaries and not section_summary:
             continue
         _send_progress(progress_queue, f"section summary of {title}:")
@@ -132,61 +141,78 @@ def _build_section_summaries(llm: BaseChatModel, paper: Paper,
         _send_progress(progress_queue, f"{title} section summary: {section_summary}")
         knowledge_retriever.add_documents(
             documents=[Document(page_content=section_summary)]
-                      + [Document(page_content=s) for s in section_chunk_summaries]
+            + [Document(page_content=s) for s in section_chunk_summaries]
         )
         summaries.append(f"{title}:\n{section_summary}")
     return summaries
 
 
-def _summarize_section(llm: BaseLanguageModel, language: str,
-                       section: PaperSection, approx_chunk_size: int) -> (List[str], str):
-    chunk_summ_chain = load_summarize_chain(llm=llm, chain_type="stuff",
-                                            prompt=_summarize_with_language_prompt)
-    total_summ_chain = load_summarize_chain(llm=llm, chain_type="map_reduce",
-                                            map_prompt=_summarize_with_language_prompt,
-                                            combine_prompt=_summarize_with_language_prompt)
+def _summarize_section(
+    llm: BaseLanguageModel, language: str, section: PaperSection, approx_chunk_size: int
+) -> (List[str], str):
+    chunk_summ_chain = load_summarize_chain(
+        llm=llm, chain_type="stuff", prompt=_summarize_with_language_prompt
+    )
+    total_summ_chain = load_summarize_chain(
+        llm=llm,
+        chain_type="map_reduce",
+        map_prompt=_summarize_with_language_prompt,
+        combine_prompt=_summarize_with_language_prompt,
+    )
     total_summary = ""
     section_chunk_summaries = []
     chunked = section.chunked_elems_text(approx_chunk_size)
     for chunk in chunked:
         summary = chunk_summ_chain.run(
-            input_documents=[Document(page_content=chunk)],
-            language=language)
+            input_documents=[Document(page_content=chunk)], language=language
+        )
         section_chunk_summaries.append(summary)
 
     if section_chunk_summaries:
         summ_docs = [Document(page_content=t) for t in section_chunk_summaries]
-        total_summary = total_summ_chain.run(input_documents=summ_docs,
-                                             language=language,
-                                             return_only_outputs=True)
+        total_summary = total_summ_chain.run(
+            input_documents=summ_docs, language=language, return_only_outputs=True
+        )
     return section_chunk_summaries, total_summary
 
 
-def _build_total_summary(llm: BaseChatModel, language: str,
-                         section_summaries: List[str], progress_queue: Optional[Queue]) -> str:
+def _build_total_summary(
+    llm: BaseChatModel, language: str, section_summaries: List[str], progress_queue: Optional[Queue]
+) -> str:
     if not section_summaries:
         return ""
-    _send_progress(progress_queue, f"calculating total summary. #{len(section_summaries)} sections.")
-    total_summary_chain = load_summarize_chain(llm, chain_type="map_reduce",
-                                               map_prompt=_summarize_with_language_prompt,
-                                               combine_prompt=_summarize_with_language_prompt, )
+    _send_progress(
+        progress_queue, f"calculating total summary. #{len(section_summaries)} sections."
+    )
+    total_summary_chain = load_summarize_chain(
+        llm,
+        chain_type="map_reduce",
+        map_prompt=_summarize_with_language_prompt,
+        combine_prompt=_summarize_with_language_prompt,
+    )
     return total_summary_chain.run(
         input_documents=[Document(page_content=t) for t in section_summaries],
         language=language,
-        return_only_outputs=True)
+        return_only_outputs=True,
+    )
 
 
-def _build_keywords(llm: BaseLanguageModel, language: str, summaries: List[str], progress_queue: Optional[Queue]) -> \
-List[str]:
+def _build_keywords(
+    llm: BaseLanguageModel, language: str, summaries: List[str], progress_queue: Optional[Queue]
+) -> List[str]:
     _send_progress(progress_queue, "retrieving all keywords")
-    summary_keywords = [_get_keywords(llm=llm, content=t, count=4, language=language) for t in summaries]
+    summary_keywords = [
+        _get_keywords(llm=llm, content=t, count=4, language=language) for t in summaries
+    ]
     _send_progress(progress_queue, f"all keywords: {summary_keywords}")
     keywords_with_count: Dict[str, int] = {}
     for ks in summary_keywords:
         for k in ks:
             keywords_with_count[k] = keywords_with_count.get(k, 0) + 1
     _send_progress(progress_queue, "retrieving significant keywords")
-    return _get_significant_keywords(llm=llm, language=language, keywords=keywords_with_count, count=4)
+    return _get_significant_keywords(
+        llm=llm, language=language, keywords=keywords_with_count, count=4
+    )
 
 
 class PaperChatbot(BaseModel):
@@ -201,50 +227,76 @@ class PaperChatbot(BaseModel):
         arbitrary_types_allowed = True
 
     @classmethod
-    def load(cls, progress_queue: Optional[Queue], llm: BaseChatModel,
-             paper: Paper, knowledge_vector_store: VectorStore, language: str,
-             with_keywords: bool = False) -> 'PaperChatbot':
+    def load(
+        cls,
+        progress_queue: Optional[Queue],
+        llm: BaseChatModel,
+        paper: Paper,
+        knowledge_vector_store: VectorStore,
+        language: str,
+        with_keywords: bool = False,
+    ) -> "PaperChatbot":
         knowledge_reference_size = 5
         knowledge_vector_store = knowledge_vector_store
         knowledge_retriever: VectorStoreRetriever = knowledge_vector_store.as_retriever(
             search_kwargs=dict(k=knowledge_reference_size)
         )
-        section_summaries = _build_section_summaries(llm=llm,
-                                                     paper=paper,
-                                                     knowledge_retriever=knowledge_retriever,
-                                                     language=language,
-                                                     progress_queue=progress_queue)
+        section_summaries = _build_section_summaries(
+            llm=llm,
+            paper=paper,
+            knowledge_retriever=knowledge_retriever,
+            language=language,
+            progress_queue=progress_queue,
+        )
         _send_progress(progress_queue, f"section summaries: {section_summaries}")
-        total_summary = _build_total_summary(llm=llm,
-                                             language=language,
-                                             section_summaries=section_summaries,
-                                             progress_queue=progress_queue)
+        total_summary = _build_total_summary(
+            llm=llm,
+            language=language,
+            section_summaries=section_summaries,
+            progress_queue=progress_queue,
+        )
         _send_progress(progress_queue, f"total summary: {total_summary}")
-        keywords=[]
+        keywords = []
         if with_keywords:
-            keywords = _build_keywords(llm=llm,
-                                       language=language,
-                                       summaries=section_summaries,
-                                       progress_queue=progress_queue)
+            keywords = _build_keywords(
+                llm=llm,
+                language=language,
+                summaries=section_summaries,
+                progress_queue=progress_queue,
+            )
             _send_progress(progress_queue, f"significant keywords: {keywords}")
-        return cls(llm=llm, knowledge_retriever=knowledge_retriever, paper=paper,
-                   keywords=keywords, section_summaries=section_summaries, total_summary=total_summary)
+        return cls(
+            llm=llm,
+            knowledge_retriever=knowledge_retriever,
+            paper=paper,
+            keywords=keywords,
+            section_summaries=section_summaries,
+            total_summary=total_summary,
+        )
 
     def save(self, file_path: str):
-        with open(file_path, 'w') as f:
+        with open(file_path, "w") as f:
             json.dump(self.json(exclude={"knowledge_retriever"}), f, indent=2)
 
     def overview(self) -> str:
-        msgs = [f"Paper Title:\n {self.paper.title}",  f"Summary:\n {self.total_summary}"]
+        msgs = [f"Paper Title:\n {self.paper.title}", f"Summary:\n {self.total_summary}"]
         if self.keywords:
             msgs.append(f"Keywords:\n {self.keywords}")
         return "\n\n".join(msgs)
 
-    def answer(self, progress_queue: Optional[Queue],
-               language: str, query: str, chat_history: BaseChatMessageHistory) -> str:
+    def answer(
+        self,
+        language: str,
+        query: str,
+        chat_history: BaseChatMessageHistory,
+        progress_queue: Optional[Queue] = None,
+    ) -> str:
         _send_progress(progress_queue, "retrieving related docs")
         docs = self.knowledge_retriever.get_relevant_documents(query)
-        _send_progress(progress_queue, "\n".join(["related docs:"] + [f"\t - {doc.page_content}" for doc in docs]))
+        _send_progress(
+            progress_queue,
+            "\n".join(["related docs:"] + [f"\t - {doc.page_content}" for doc in docs]),
+        )
         history_limit = 3
         trimmed_history = chat_history.messages[-history_limit:]
         history_summary = "\n".join([f"{item.type}: {item.content}" for item in trimmed_history])
@@ -267,6 +319,12 @@ Based on the KNOWLEDGES and CHAT HISTORY, ANSWER the following USER QUERY:
 USER QUERY: {{ user_query }}
 ALWAYS ANSWER WITH {{ language }}
 
-ANSWER:"""))
+ANSWER:""",
+            ),
+        )
         return chain.run(
-            language=language, chat_history=history_summary, knowledge=knowledge_summary, user_query=query)
+            language=language,
+            chat_history=history_summary,
+            knowledge=knowledge_summary,
+            user_query=query,
+        )
