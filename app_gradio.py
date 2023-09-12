@@ -177,6 +177,7 @@ def _init_chatbot(
 def _answer(language: str, user_query: str, chat_history: List):
     global paper_chatbot
     if not paper_chatbot:
+        gr.Error("chatbot not initialized")
         return "", []
     history = ChatMessageHistory(messages=[])
     for human_msg, ai_msg in chat_history:

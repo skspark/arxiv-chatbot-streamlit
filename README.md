@@ -4,6 +4,7 @@
 ## Prerequisites
 ```shell
 pip install pdm
+pip install gradio
 pdm install
 ```
 
